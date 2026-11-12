@@ -1,0 +1,34 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/redis-clone
+/dice
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency dirs
+vendor/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
