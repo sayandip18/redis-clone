@@ -1,4 +1,4 @@
-# mini-redis
+# redis-clone
 
 A Redis clone written in Go, built as a learning project. It speaks the RESP protocol, so you can talk to it with the real `redis-cli`.
 
@@ -7,19 +7,25 @@ A Redis clone written in Go, built as a learning project. It speaks the RESP pro
 ## Quick start
 
 ```bash
-# Run the server (listens on :6379)
-go run ./cmd/server
+# Run the server (listens on :7379 by default)
+go run .
 
 # In another terminal
-redis-cli -p 6379 PING
+redis-cli -p 7379 PING
 # PONG
+```
+
+Optional flags:
+
+```bash
+go run . -host 127.0.0.1 -port 7379
 ```
 
 ## Supported commands
 
 | Category | Commands |
 |---|---|
-| Connection | `PING`, `ECHO` |
+| Connection | `PING` |
 | Strings | _coming soon_ |
 
 This table is updated as features are added.
@@ -35,17 +41,17 @@ go vet ./...
 ## Project layout
 
 ```
-cmd/server/            # entry point
-internal/resp/         # RESP parser and writer
-internal/server/       # TCP server
-internal/store/        # in-memory data store
-internal/commands/     # command handlers
-internal/persistence/  # AOF and RDB
+main.go              # entry point
+config/              # host/port defaults
+server/              # synchronous TCP server
+internal/resp/       # RESP decode/encode
+internal/core/       # command types and handlers
 ```
 
 ## Roadmap
 
-- [ ] TCP server + RESP protocol
+- [x] TCP server + RESP protocol
+- [x] `PING`
 - [ ] Strings (`SET`, `GET`, `DEL`, `INCR`, ...)
 - [ ] Key expiration
 - [ ] Lists, hashes, sets, sorted sets

@@ -10,6 +10,28 @@ var (
 	ErrInvalid    = errors.New("invalid RESP data")
 )
 
+func DecodeArrayString(data []byte) ([]string, error) {
+	value, err := Decode(data)
+	if err != nil {
+		return nil, err
+	}
+
+	ts, ok := value.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("%w: expected array", ErrInvalid)
+	}
+
+	tokens := make([]string, len(ts))
+	for i := range ts {
+		s, ok := ts[i].(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: expected string element", ErrInvalid)
+		}
+		tokens[i] = s
+	}
+	return tokens, nil
+}
+
 // Decode parses a complete RESP value from data.
 func Decode(data []byte) (interface{}, error) {
 	value, _, err := DecodeOne(data)
