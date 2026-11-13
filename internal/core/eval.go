@@ -3,21 +3,21 @@ package core
 import (
 	"errors"
 	"fmt"
-	"net"
+	"io"
 
 	"github.com/sayandip18/redis-clone/internal/resp"
 )
 
-func EvalAndRespond(cmd *RedisCmd, c net.Conn) error {
+func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 	switch cmd.Cmd {
 	case "PING":
-		return evalPING(cmd.Args, c)
+		return evalPING(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
 }
 
-func evalPING(args []string, c net.Conn) error {
+func evalPING(args []string, w io.Writer) error {
 	var b []byte
 
 	if len(args) >= 2 {
@@ -30,6 +30,6 @@ func evalPING(args []string, c net.Conn) error {
 		b = resp.Encode(args[0], false)
 	}
 
-	_, err := c.Write(b)
+	_, err := w.Write(b)
 	return err
 }

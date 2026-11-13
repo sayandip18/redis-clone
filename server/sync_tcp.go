@@ -12,9 +12,9 @@ import (
 	"github.com/sayandip18/redis-clone/internal/resp"
 )
 
-func readCommand(c net.Conn) (*core.RedisCmd, error) {
+func readCommand(rw io.ReadWriter) (*core.RedisCmd, error) {
 	buf := make([]byte, 512)
-	n, err := c.Read(buf[:])
+	n, err := rw.Read(buf[:])
 	if err != nil {
 		return nil, err
 	}
@@ -33,15 +33,15 @@ func readCommand(c net.Conn) (*core.RedisCmd, error) {
 	}, nil
 }
 
-func respondError(err error, c net.Conn) error {
-	_, writeErr := c.Write([]byte(fmt.Sprintf("-%s\r\n", err.Error())))
+func respondError(err error, w io.Writer) error {
+	_, writeErr := w.Write([]byte(fmt.Sprintf("-%s\r\n", err.Error())))
 	return writeErr
 }
 
-func respond(cmd *core.RedisCmd, c net.Conn) error {
-	err := core.EvalAndRespond(cmd, c)
+func respond(cmd *core.RedisCmd, rw io.ReadWriter) error {
+	err := core.EvalAndRespond(cmd, rw)
 	if err != nil {
-		return respondError(err, c)
+		return respondError(err, rw)
 	}
 	return nil
 }
