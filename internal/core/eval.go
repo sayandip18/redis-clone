@@ -26,6 +26,8 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 		return evalDEL(cmd.Args, w)
 	case "EXPIRE":
 		return evalEXPIRE(cmd.Args, w)
+	case "BGREWRITEAOF":
+		return evalBGREWRITEAOF(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -164,4 +166,12 @@ func evalEXPIRE(args []string, c io.ReadWriter) error {
 
 	c.Write([]byte(":1\r\n"))
 	return nil
+}
+
+func evalBGREWRITEAOF(args []string, c io.ReadWriter) error {
+	if err := DumpAllAOF(); err != nil {
+		return err
+	}
+	_, err := c.Write([]byte("+OK\r\n"))
+	return err
 }

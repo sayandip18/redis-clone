@@ -5,4 +5,5 @@ var (
 	Port             = 7379
 	KeysLimit        = 5
 	EvictionStrategy = "simple-first"
+	AOFFile          = "dump.aof"
 )
