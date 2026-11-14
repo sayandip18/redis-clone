@@ -21,9 +21,10 @@ func DumpAllAOF() error {
 			continue
 		}
 
-		value, ok := obj.Value.(string)
-		if !ok {
-			value = fmt.Sprintf("%v", obj.Value)
+		value, err := GetStringValue(obj)
+		if err != nil {
+			// Only string objects are supported in AOF for now.
+			continue
 		}
 
 		sb.WriteString(encodeAOFCommand("SET", key, value))

@@ -28,6 +28,8 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 		return evalEXPIRE(cmd.Args, w)
 	case "BGREWRITEAOF":
 		return evalBGREWRITEAOF(cmd.Args, w)
+	case "OBJECT":
+		return evalOBJECT(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -78,7 +80,7 @@ func evalSET(args []string, c io.Writer) error {
 		}
 	}
 
-	Put(key, NewObj(value, exDurationMs))
+	Put(key, NewStringObj(value, exDurationMs))
 	c.Write([]byte("+OK\r\n"))
 	return nil
 }
@@ -97,7 +99,12 @@ func evalGET(args []string, c io.ReadWriter) error {
 		return nil
 	}
 
-	c.Write(resp.Encode(obj.Value, false))
+	value, err := GetStringValue(obj)
+	if err != nil {
+		return err
+	}
+
+	c.Write(resp.Encode(value, false))
 	return nil
 }
 
@@ -174,4 +181,27 @@ func evalBGREWRITEAOF(args []string, c io.ReadWriter) error {
 	}
 	_, err := c.Write([]byte("+OK\r\n"))
 	return err
+}
+
+func evalOBJECT(args []string, c io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'object' command")
+	}
+
+	sub := args[0]
+	switch sub {
+	case "ENCODING", "encoding":
+		if len(args) != 2 {
+			return errors.New("(error) ERR wrong number of arguments for 'object|encoding' command")
+		}
+		obj := Get(args[1])
+		if obj == nil {
+			_, err := c.Write(RESP_NIL)
+			return err
+		}
+		_, err := c.Write(resp.Encode(EncodingName(obj.Encoding), false))
+		return err
+	default:
+		return fmt.Errorf("(error) ERR unknown subcommand or wrong number of arguments for '%s'. Try OBJECT HELP.", sub)
+	}
 }

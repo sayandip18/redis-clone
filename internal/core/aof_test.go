@@ -55,7 +55,7 @@ func TestDumpAllAOF_SETWithoutExpiry(t *testing.T) {
 	resetStore()
 	path := withTempAOF(t)
 
-	Put("foo", NewObj("bar", -1))
+	Put("foo", NewStringObj("bar", -1))
 
 	if err := DumpAllAOF(); err != nil {
 		t.Fatalf("DumpAllAOF() error: %v", err)
@@ -77,7 +77,7 @@ func TestDumpAllAOF_SETWithPEXPIREAT(t *testing.T) {
 	path := withTempAOF(t)
 
 	expiresAt := time.Now().UnixMilli() + 60_000
-	Put("foo", &Obj{Value: "bar", ExpiresAt: expiresAt})
+	Put("foo", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: "bar", ExpiresAt: expiresAt})
 
 	if err := DumpAllAOF(); err != nil {
 		t.Fatalf("DumpAllAOF() error: %v", err)
@@ -98,12 +98,33 @@ func TestDumpAllAOF_SETWithPEXPIREAT(t *testing.T) {
 	}
 }
 
+func TestDumpAllAOF_IntEncodedAsString(t *testing.T) {
+	resetStore()
+	path := withTempAOF(t)
+
+	Put("n", NewStringObj("42", -1))
+
+	if err := DumpAllAOF(); err != nil {
+		t.Fatalf("DumpAllAOF() error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	want := encodeAOFCommand("SET", "n", "42")
+	if string(data) != want {
+		t.Fatalf("AOF content = %q, want %q", data, want)
+	}
+}
+
 func TestDumpAllAOF_SkipsExpiredKeys(t *testing.T) {
 	resetStore()
 	path := withTempAOF(t)
 
-	Put("alive", NewObj("ok", -1))
-	Put("dead", &Obj{Value: "gone", ExpiresAt: time.Now().UnixMilli() - 1000})
+	Put("alive", NewStringObj("ok", -1))
+	Put("dead", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: "gone", ExpiresAt: time.Now().UnixMilli() - 1000})
 
 	if err := DumpAllAOF(); err != nil {
 		t.Fatalf("DumpAllAOF() error: %v", err)
