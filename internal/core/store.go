@@ -106,6 +106,30 @@ func EncodingName(enc ObjEncoding) string {
 	}
 }
 
+// getInt64Value parses a string object's value as int64 for INCR-like commands.
+func getInt64Value(obj *Obj) (int64, error) {
+	switch obj.Encoding {
+	case EncodingInt:
+		n, ok := obj.Value.(int64)
+		if !ok {
+			return 0, errors.New("(error) ERR value is not an integer or out of range")
+		}
+		return n, nil
+	case EncodingRaw, EncodingEmbstr:
+		s, ok := obj.Value.(string)
+		if !ok {
+			return 0, errors.New("(error) ERR value is not an integer or out of range")
+		}
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return 0, errors.New("(error) ERR value is not an integer or out of range")
+		}
+		return n, nil
+	default:
+		return 0, errors.New("(error) ERR value is not an integer or out of range")
+	}
+}
+
 // stringObjToRaw promotes int/embstr string objects to EncodingRaw (for future mutating cmds).
 func stringObjToRaw(obj *Obj) error {
 	if obj.Type != ObjString {

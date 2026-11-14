@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"time"
 
@@ -30,6 +31,8 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 		return evalBGREWRITEAOF(cmd.Args, w)
 	case "OBJECT":
 		return evalOBJECT(cmd.Args, w)
+	case "INCR":
+		return evalINCR(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -204,4 +207,44 @@ func evalOBJECT(args []string, c io.Writer) error {
 	default:
 		return fmt.Errorf("(error) ERR unknown subcommand or wrong number of arguments for '%s'. Try OBJECT HELP.", sub)
 	}
+}
+
+func evalINCR(args []string, c io.Writer) error {
+	if len(args) != 1 {
+		return errors.New("(error) ERR wrong number of arguments for 'incr' command")
+	}
+
+	key := args[0]
+	obj := Get(key)
+
+	var i int64
+	if obj == nil {
+		obj = &Obj{
+			Type:      ObjString,
+			Encoding:  EncodingInt,
+			Value:     int64(0),
+			ExpiresAt: -1,
+		}
+		Put(key, obj)
+	} else {
+		if obj.Type != ObjString {
+			return ErrWrongType
+		}
+		n, err := getInt64Value(obj)
+		if err != nil {
+			return err
+		}
+		i = n
+	}
+
+	if i == math.MaxInt64 {
+		return errors.New("(error) ERR increment or decrement would overflow")
+	}
+
+	i++
+	obj.Encoding = EncodingInt
+	obj.Value = i
+
+	_, err := c.Write(resp.Encode(i, false))
+	return err
 }

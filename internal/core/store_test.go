@@ -3,8 +3,10 @@ package core
 import (
 	"bytes"
 	"errors"
+	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewStringObj_EncodingInt(t *testing.T) {
@@ -137,6 +139,87 @@ func TestEvalSET_GET_IntEncoding(t *testing.T) {
 	}
 	if out.String() != "$3\r\n123\r\n" {
 		t.Fatalf("GET response = %q, want bulk string 123", out.String())
+	}
+}
+
+func TestEvalINCR_MissingKey(t *testing.T) {
+	resetStore()
+
+	var out bytes.Buffer
+	if err := evalINCR([]string{"counter"}, &out); err != nil {
+		t.Fatalf("evalINCR() error: %v", err)
+	}
+	if out.String() != ":1\r\n" {
+		t.Fatalf("INCR response = %q, want :1", out.String())
+	}
+
+	obj := Get("counter")
+	if obj == nil || obj.Encoding != EncodingInt || obj.Value != int64(1) {
+		t.Fatalf("obj = %+v, want EncodingInt value 1", obj)
+	}
+}
+
+func TestEvalINCR_ExistingInt(t *testing.T) {
+	resetStore()
+	Put("n", NewStringObj("10", -1))
+
+	var out bytes.Buffer
+	if err := evalINCR([]string{"n"}, &out); err != nil {
+		t.Fatalf("evalINCR() error: %v", err)
+	}
+	if out.String() != ":11\r\n" {
+		t.Fatalf("INCR response = %q, want :11", out.String())
+	}
+}
+
+func TestEvalINCR_NonInteger(t *testing.T) {
+	resetStore()
+	Put("s", NewStringObj("hello", -1))
+
+	var out bytes.Buffer
+	err := evalINCR([]string{"s"}, &out)
+	if err == nil {
+		t.Fatal("evalINCR() expected error for non-integer")
+	}
+}
+
+func TestEvalINCR_WrongType(t *testing.T) {
+	resetStore()
+	Put("bad", &Obj{Type: ObjType(99), Encoding: EncodingRaw, Value: "1", ExpiresAt: -1})
+
+	var out bytes.Buffer
+	err := evalINCR([]string{"bad"}, &out)
+	if !errors.Is(err, ErrWrongType) {
+		t.Fatalf("evalINCR() error = %v, want ErrWrongType", err)
+	}
+}
+
+func TestEvalINCR_Overflow(t *testing.T) {
+	resetStore()
+	Put("n", &Obj{Type: ObjString, Encoding: EncodingInt, Value: int64(math.MaxInt64), ExpiresAt: -1})
+
+	var out bytes.Buffer
+	err := evalINCR([]string{"n"}, &out)
+	if err == nil {
+		t.Fatal("evalINCR() expected overflow error")
+	}
+}
+
+func TestEvalINCR_PreservesTTL(t *testing.T) {
+	resetStore()
+	expiresAt := time.Now().UnixMilli() + 60_000
+	Put("n", &Obj{Type: ObjString, Encoding: EncodingInt, Value: int64(1), ExpiresAt: expiresAt})
+
+	var out bytes.Buffer
+	if err := evalINCR([]string{"n"}, &out); err != nil {
+		t.Fatalf("evalINCR() error: %v", err)
+	}
+	obj := Get("n")
+	if obj.ExpiresAt != expiresAt {
+		t.Fatalf("ExpiresAt = %d, want %d", obj.ExpiresAt, expiresAt)
+	}
+	if obj.Value != int64(2) {
+		t.Fatalf("Value = %v, want 2", obj.Value)
 	}
 }
 
