@@ -2,6 +2,8 @@ package core
 
 import (
 	"time"
+
+	"github.com/sayandip18/redis-clone/config"
 )
 
 var store map[string]*Obj
@@ -28,6 +30,9 @@ func NewObj(value interface{}, durationMs int64) *Obj {
 }
 
 func Put(k string, obj *Obj) {
+	if _, exists := store[k]; !exists && len(store) >= config.KeysLimit {
+		evict()
+	}
 	store[k] = obj
 }
 
