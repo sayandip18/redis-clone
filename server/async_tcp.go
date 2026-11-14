@@ -19,6 +19,7 @@ func RunAsyncTCPServer() {
 	conClients := 0
 	var cronFrequency time.Duration = 1 * time.Second
 	var lastCronExecTime time.Time = time.Now()
+	buffers := make(map[int][]byte)
 
 	events := make([]syscall.EpollEvent, maxClients)
 
@@ -112,18 +113,23 @@ func RunAsyncTCPServer() {
 			}
 
 			comm := FDComm{Fd: fd}
-			cmd, err := readCommand(comm)
+			buf := buffers[fd]
+			cmds, err := readCommands(comm, &buf)
+			buffers[fd] = buf
+
+			for _, cmd := range cmds {
+				log.Println("command", cmd)
+				if werr := respond(cmd, comm); werr != nil {
+					log.Println("err write:", werr)
+				}
+			}
 			if err != nil {
+				delete(buffers, fd)
 				syscall.Close(fd)
 				conClients--
 				log.Println("client disconnected", "fd", fd, "concurrent clients", conClients)
 				log.Println("err", err)
 				continue
-			}
-
-			log.Println("command", cmd)
-			if err = respond(cmd, comm); err != nil {
-				log.Println("err write:", err)
 			}
 		}
 	}

@@ -173,3 +173,50 @@ func TestDecode(t *testing.T) {
 		t.Fatalf("Decode() = %#v, want %#v", got, want)
 	}
 }
+
+func TestDrainArrayStrings(t *testing.T) {
+	t.Run("two complete commands", func(t *testing.T) {
+		input := []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n")
+		cmds, rest, err := DrainArrayStrings(input)
+		if err != nil {
+			t.Fatalf("DrainArrayStrings() error: %v", err)
+		}
+		want := [][]string{{"PING"}, {"GET", "key"}}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("DrainArrayStrings() cmds = %#v, want %#v", cmds, want)
+		}
+		if len(rest) != 0 {
+			t.Fatalf("DrainArrayStrings() rest = %q, want empty", rest)
+		}
+	})
+
+	t.Run("one complete and incomplete leftover", func(t *testing.T) {
+		input := []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3\r\nGET\r\n$3\r\nk")
+		cmds, rest, err := DrainArrayStrings(input)
+		if err != nil {
+			t.Fatalf("DrainArrayStrings() error: %v", err)
+		}
+		want := [][]string{{"PING"}}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("DrainArrayStrings() cmds = %#v, want %#v", cmds, want)
+		}
+		wantRest := "*2\r\n$3\r\nGET\r\n$3\r\nk"
+		if string(rest) != wantRest {
+			t.Fatalf("DrainArrayStrings() rest = %q, want %q", rest, wantRest)
+		}
+	})
+
+	t.Run("only incomplete", func(t *testing.T) {
+		input := []byte("*1\r\n$4\r\nPI")
+		cmds, rest, err := DrainArrayStrings(input)
+		if err != nil {
+			t.Fatalf("DrainArrayStrings() error: %v", err)
+		}
+		if len(cmds) != 0 {
+			t.Fatalf("DrainArrayStrings() cmds = %#v, want empty", cmds)
+		}
+		if string(rest) != string(input) {
+			t.Fatalf("DrainArrayStrings() rest = %q, want %q", rest, input)
+		}
+	})
+}

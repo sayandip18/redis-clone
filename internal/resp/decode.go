@@ -16,6 +16,37 @@ func DecodeArrayString(data []byte) ([]string, error) {
 		return nil, err
 	}
 
+	tokens, err := arrayToStrings(value)
+	if err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+// DrainArrayStrings parses consecutive RESP arrays of strings from data.
+// Incomplete trailing bytes are returned in rest with a nil error.
+func DrainArrayStrings(data []byte) (commands [][]string, rest []byte, err error) {
+	rest = data
+	for len(rest) > 0 {
+		value, n, err := DecodeOne(rest)
+		if err != nil {
+			if errors.Is(err, ErrIncomplete) {
+				return commands, rest, nil
+			}
+			return nil, rest, err
+		}
+
+		tokens, err := arrayToStrings(value)
+		if err != nil {
+			return nil, rest, err
+		}
+		commands = append(commands, tokens)
+		rest = rest[n:]
+	}
+	return commands, rest, nil
+}
+
+func arrayToStrings(value interface{}) ([]string, error) {
 	ts, ok := value.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("%w: expected array", ErrInvalid)
