@@ -6,8 +6,10 @@ import (
 	"log"
 	"net"
 	"syscall"
+	"time"
 
 	"github.com/sayandip18/redis-clone/config"
+	"github.com/sayandip18/redis-clone/internal/core"
 )
 
 func RunAsyncTCPServer() {
@@ -15,6 +17,8 @@ func RunAsyncTCPServer() {
 
 	maxClients := 20000
 	conClients := 0
+	var cronFrequency time.Duration = 1 * time.Second
+	var lastCronExecTime time.Time = time.Now()
 
 	events := make([]syscall.EpollEvent, maxClients)
 
@@ -63,7 +67,11 @@ func RunAsyncTCPServer() {
 	}
 
 	for {
-		nevents, err := syscall.EpollWait(epollFD, events, -1)
+		if time.Now().After(lastCronExecTime.Add(cronFrequency)) {
+			core.DeleteExpiredKeys()
+			lastCronExecTime = time.Now()
+		}
+		nevents, err := syscall.EpollWait(epollFD, events, 100)
 		if err != nil {
 			if err == syscall.EINTR {
 				continue
