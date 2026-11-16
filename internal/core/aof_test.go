@@ -13,6 +13,7 @@ import (
 
 func resetStore() {
 	store = make(map[string]*Obj)
+	keyVersions = make(map[string]uint64)
 }
 
 func withTempAOF(t *testing.T) string {

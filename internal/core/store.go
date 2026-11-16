@@ -10,6 +10,10 @@ import (
 
 var store map[string]*Obj
 
+// keyVersions tracks a monotonic version per key for WATCH optimistic locking.
+// Missing keys are treated as version 0.
+var keyVersions map[string]uint64
+
 // ErrWrongType is returned when a command is used against a key of the wrong type.
 var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
 
@@ -60,6 +64,26 @@ func IdleTime(obj *Obj) int64 {
 
 func init() {
 	store = make(map[string]*Obj)
+	keyVersions = make(map[string]uint64)
+}
+
+// KeyVersion returns the current optimistic-lock version for k (0 if never written).
+func KeyVersion(k string) uint64 {
+	return keyVersions[k]
+}
+
+func bumpVersion(k string) {
+	keyVersions[k]++
+}
+
+// deleteKey removes k from the store and bumps its version. Returns whether it existed.
+func deleteKey(k string) bool {
+	if _, ok := store[k]; !ok {
+		return false
+	}
+	delete(store, k)
+	bumpVersion(k)
+	return true
 }
 
 // chooseStringEncoding picks int, embstr, or raw for a string value.
@@ -179,6 +203,7 @@ func Put(k string, obj *Obj) error {
 		}
 	}
 	store[k] = obj
+	bumpVersion(k)
 	return nil
 }
 
@@ -187,7 +212,7 @@ func Get(k string) *Obj {
 	v := store[k]
 	if v != nil {
 		if v.ExpiresAt != -1 && v.ExpiresAt <= time.Now().UnixMilli() {
-			delete(store, k)
+			deleteKey(k)
 			return nil
 		}
 		v.LRU = getLRUClock()
@@ -200,7 +225,7 @@ func getNoTouch(k string) *Obj {
 	v := store[k]
 	if v != nil {
 		if v.ExpiresAt != -1 && v.ExpiresAt <= time.Now().UnixMilli() {
-			delete(store, k)
+			deleteKey(k)
 			return nil
 		}
 	}
@@ -208,11 +233,7 @@ func getNoTouch(k string) *Obj {
 }
 
 func Del(k string) bool {
-	if _, ok := store[k]; ok {
-		delete(store, k)
-		return true
-	}
-	return false
+	return deleteKey(k)
 }
 
 // KeyCount returns the number of keys currently in the store.

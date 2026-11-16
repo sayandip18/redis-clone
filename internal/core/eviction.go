@@ -9,8 +9,7 @@ import (
 // evictFirst deletes the first key found while iterating the map.
 func evictFirst() bool {
 	for k := range store {
-		delete(store, k)
-		return true
+		return deleteKey(k)
 	}
 	return false
 }
@@ -39,8 +38,7 @@ func evictVolatileLRU() bool {
 		// Skip already-expired keys; prefer reclaiming via expire path, but
 		// they are still volatile — delete them as an easy win if sampled.
 		if obj.ExpiresAt <= now {
-			delete(store, key)
-			return true
+			return deleteKey(key)
 		}
 
 		if !found || obj.LRU < victimLRU {
@@ -57,8 +55,7 @@ func evictVolatileLRU() bool {
 	if !found {
 		return false
 	}
-	delete(store, victimKey)
-	return true
+	return deleteKey(victimKey)
 }
 
 // evict runs the configured eviction strategy. Returns whether a key was removed.

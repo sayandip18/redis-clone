@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +15,31 @@ import (
 )
 
 var RESP_NIL []byte = []byte("$-1\r\n")
+var RESP_NIL_ARRAY []byte = []byte("*-1\r\n")
 
-func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
+var errExecAbort = errors.New("EXECABORT Transaction discarded because of previous errors.")
+
+// EvalAndRespond dispatches a command for the given client, writing a RESP reply to w.
+func EvalAndRespond(client *Client, cmd *RedisCmd, w io.Writer) error {
+	switch cmd.Cmd {
+	case "MULTI":
+		return evalMULTI(client, cmd.Args, w)
+	case "EXEC":
+		return evalEXEC(client, cmd.Args, w)
+	case "DISCARD":
+		return evalDISCARD(client, cmd.Args, w)
+	case "WATCH":
+		return evalWATCH(client, cmd.Args, w)
+	}
+
+	if client != nil && client.InTx {
+		return enqueueCommand(client, cmd, w)
+	}
+
+	return execCommand(cmd, w)
+}
+
+func execCommand(cmd *RedisCmd, w io.Writer) error {
 	switch cmd.Cmd {
 	case "PING":
 		return evalPING(cmd.Args, w)
@@ -42,6 +66,117 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
+}
+
+func isKnownCommand(name string) bool {
+	switch name {
+	case "PING", "GET", "SET", "TTL", "DEL", "EXPIRE", "BGREWRITEAOF",
+		"OBJECT", "INCR", "INFO", "SHUTDOWN",
+		"MULTI", "EXEC", "DISCARD", "WATCH":
+		return true
+	default:
+		return false
+	}
+}
+
+func enqueueCommand(client *Client, cmd *RedisCmd, w io.Writer) error {
+	if !isKnownCommand(cmd.Cmd) {
+		client.Aborted = true
+		return fmt.Errorf("unknown command: %s", cmd.Cmd)
+	}
+	// Transaction control commands are handled before enqueue; anything else queues.
+	client.Queue = append(client.Queue, cmd)
+	_, err := w.Write([]byte("+QUEUED\r\n"))
+	return err
+}
+
+func evalMULTI(client *Client, args []string, w io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'multi' command")
+	}
+	if client == nil {
+		return errors.New("(error) ERR MULTI requires a client")
+	}
+	if client.InTx {
+		return errors.New("(error) ERR MULTI calls can not be nested")
+	}
+	client.InTx = true
+	client.Queue = nil
+	client.Aborted = false
+	_, err := w.Write([]byte("+OK\r\n"))
+	return err
+}
+
+func evalEXEC(client *Client, args []string, w io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'exec' command")
+	}
+	if client == nil || !client.InTx {
+		return errors.New("(error) ERR EXEC without MULTI")
+	}
+
+	aborted := client.Aborted
+	queue := client.Queue
+	watchesOK := client.watchesIntact()
+
+	// Always clear transaction + watches after EXEC (Redis semantics).
+	client.clearTxAndWatches()
+
+	if aborted {
+		return errExecAbort
+	}
+	if !watchesOK {
+		_, err := w.Write(RESP_NIL_ARRAY)
+		return err
+	}
+
+	var out bytes.Buffer
+	out.WriteString(fmt.Sprintf("*%d\r\n", len(queue)))
+	for _, queued := range queue {
+		var buf bytes.Buffer
+		if err := execCommand(queued, &buf); err != nil {
+			buf.Reset()
+			buf.WriteString(fmt.Sprintf("-%s\r\n", err.Error()))
+		}
+		out.Write(buf.Bytes())
+	}
+	_, err := w.Write(out.Bytes())
+	return err
+}
+
+func evalDISCARD(client *Client, args []string, w io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'discard' command")
+	}
+	if client == nil || !client.InTx {
+		return errors.New("(error) ERR DISCARD without MULTI")
+	}
+	client.clearTxAndWatches()
+	_, err := w.Write([]byte("+OK\r\n"))
+	return err
+}
+
+func evalWATCH(client *Client, args []string, w io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'watch' command")
+	}
+	if client == nil {
+		return errors.New("(error) ERR WATCH requires a client")
+	}
+	if client.InTx {
+		return errors.New("(error) ERR WATCH inside MULTI is not allowed")
+	}
+	if client.Watching == nil {
+		client.Watching = make(map[string]uint64)
+	}
+	for _, key := range args {
+		// Only snapshot if not already watching this key (Redis keeps first watch version).
+		if _, ok := client.Watching[key]; !ok {
+			client.Watching[key] = KeyVersion(key)
+		}
+	}
+	_, err := w.Write([]byte("+OK\r\n"))
+	return err
 }
 
 func evalPING(args []string, w io.Writer) error {
@@ -92,11 +227,11 @@ func evalSET(args []string, c io.Writer) error {
 	if err := Put(key, NewStringObj(value, exDurationMs)); err != nil {
 		return err
 	}
-	c.Write([]byte("+OK\r\n"))
-	return nil
+	_, err := c.Write([]byte("+OK\r\n"))
+	return err
 }
 
-func evalGET(args []string, c io.ReadWriter) error {
+func evalGET(args []string, c io.Writer) error {
 	if len(args) != 1 {
 		return errors.New("(error) ERR wrong number of arguments for 'get' command")
 	}
@@ -106,8 +241,8 @@ func evalGET(args []string, c io.ReadWriter) error {
 	obj := Get(key)
 
 	if obj == nil {
-		c.Write(RESP_NIL)
-		return nil
+		_, err := c.Write(RESP_NIL)
+		return err
 	}
 
 	value, err := GetStringValue(obj)
@@ -115,11 +250,11 @@ func evalGET(args []string, c io.ReadWriter) error {
 		return err
 	}
 
-	c.Write(resp.Encode(value, false))
-	return nil
+	_, err = c.Write(resp.Encode(value, false))
+	return err
 }
 
-func evalTTL(args []string, c io.ReadWriter) error {
+func evalTTL(args []string, c io.Writer) error {
 	if len(args) != 1 {
 		return errors.New("(error) ERR wrong number of arguments for 'ttl' command")
 	}
@@ -129,27 +264,27 @@ func evalTTL(args []string, c io.ReadWriter) error {
 	obj := Get(key)
 
 	if obj == nil {
-		c.Write([]byte(":-2\r\n"))
-		return nil
+		_, err := c.Write([]byte(":-2\r\n"))
+		return err
 	}
 
 	if obj.ExpiresAt == -1 {
-		c.Write([]byte(":-1\r\n"))
-		return nil
+		_, err := c.Write([]byte(":-1\r\n"))
+		return err
 	}
 
 	durationMs := obj.ExpiresAt - time.Now().UnixMilli()
 
 	if durationMs < 0 {
-		c.Write([]byte(":-2\r\n"))
-		return nil
+		_, err := c.Write([]byte(":-2\r\n"))
+		return err
 	}
 
-	c.Write(resp.Encode(int64(durationMs/1000), false))
-	return nil
+	_, err := c.Write(resp.Encode(int64(durationMs/1000), false))
+	return err
 }
 
-func evalDEL(args []string, c io.ReadWriter) error {
+func evalDEL(args []string, c io.Writer) error {
 	var countDeleted int = 0
 
 	for _, key := range args {
@@ -158,11 +293,11 @@ func evalDEL(args []string, c io.ReadWriter) error {
 		}
 	}
 
-	c.Write(resp.Encode(int64(countDeleted), false))
-	return nil
+	_, err := c.Write(resp.Encode(int64(countDeleted), false))
+	return err
 }
 
-func evalEXPIRE(args []string, c io.ReadWriter) error {
+func evalEXPIRE(args []string, c io.Writer) error {
 	if len(args) <= 1 {
 		return errors.New("(error) ERR wrong number of arguments for 'expire' command")
 	}
@@ -176,17 +311,18 @@ func evalEXPIRE(args []string, c io.ReadWriter) error {
 	obj := Get(key)
 
 	if obj == nil {
-		c.Write([]byte(":0\r\n"))
-		return nil
+		_, err := c.Write([]byte(":0\r\n"))
+		return err
 	}
 
 	obj.ExpiresAt = time.Now().UnixMilli() + exDurationSec*1000
+	bumpVersion(key)
 
-	c.Write([]byte(":1\r\n"))
-	return nil
+	_, err = c.Write([]byte(":1\r\n"))
+	return err
 }
 
-func evalBGREWRITEAOF(args []string, c io.ReadWriter) error {
+func evalBGREWRITEAOF(args []string, c io.Writer) error {
 	if err := DumpAllAOF(); err != nil {
 		return err
 	}
@@ -248,6 +384,7 @@ func evalINCR(args []string, c io.Writer) error {
 	obj := Get(key)
 
 	var i int64
+	created := false
 	if obj == nil {
 		obj = &Obj{
 			Type:      ObjString,
@@ -259,6 +396,7 @@ func evalINCR(args []string, c io.Writer) error {
 		if err := Put(key, obj); err != nil {
 			return err
 		}
+		created = true
 	} else {
 		if obj.Type != ObjString {
 			return ErrWrongType
@@ -277,10 +415,15 @@ func evalINCR(args []string, c io.Writer) error {
 	i++
 	obj.Encoding = EncodingInt
 	obj.Value = i
+	// Put already bumps on create; in-place updates need an explicit bump.
+	if !created {
+		bumpVersion(key)
+	}
 
 	_, err := c.Write(resp.Encode(i, false))
 	return err
 }
+
 func buildINFO() string {
 	var b strings.Builder
 	b.WriteString("# Server\r\n")

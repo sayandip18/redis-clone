@@ -59,10 +59,10 @@ func respondError(err error, w io.Writer) error {
 	return writeErr
 }
 
-func respond(cmd *core.RedisCmd, rw io.ReadWriter) error {
-	err := core.EvalAndRespond(cmd, rw)
+func respond(client *core.Client, cmd *core.RedisCmd, w io.Writer) error {
+	err := core.EvalAndRespond(client, cmd, w)
 	if err != nil {
-		return respondError(err, rw)
+		return respondError(err, w)
 	}
 	return nil
 }
@@ -81,6 +81,7 @@ func RunSyncTCPServer() {
 			panic(err)
 		}
 		core.ClientConnected()
+		client := core.NewClient()
 		log.Println("client connected with address:", c.RemoteAddr(), "concurrent clients", core.ConnectedClients())
 
 		var buf []byte
@@ -88,7 +89,7 @@ func RunSyncTCPServer() {
 			cmds, err := readCommands(c, &buf)
 			for _, cmd := range cmds {
 				log.Println("command", cmd)
-				if err := respond(cmd, c); err != nil {
+				if err := respond(client, cmd, c); err != nil {
 					log.Println("err write:", err)
 				}
 			}

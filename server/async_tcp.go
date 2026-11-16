@@ -19,6 +19,7 @@ func RunAsyncTCPServer() {
 	var cronFrequency time.Duration = 1 * time.Second
 	var lastCronExecTime time.Time = time.Now()
 	buffers := make(map[int][]byte)
+	clients := make(map[int]*core.Client)
 	accepting := true
 
 	events := make([]syscall.EpollEvent, maxClients)
@@ -77,7 +78,7 @@ func RunAsyncTCPServer() {
 				log.Println("shutdown requested - stopped accepting new connections")
 			}
 
-			closeAllClients(buffers)
+			closeAllClients(buffers, clients)
 			if err := core.DumpAllAOF(); err != nil {
 				log.Println("err dumping AOF on shutdown:", err)
 			}
@@ -128,6 +129,7 @@ func RunAsyncTCPServer() {
 				}
 
 				buffers[clientFD] = nil
+				clients[clientFD] = core.NewClient()
 				core.ClientConnected()
 				log.Println("client connected with address:", sockaddrString(sa), "concurrent clients", core.ConnectedClients())
 				continue
@@ -135,17 +137,23 @@ func RunAsyncTCPServer() {
 
 			comm := FDComm{Fd: fd}
 			buf := buffers[fd]
+			client := clients[fd]
+			if client == nil {
+				client = core.NewClient()
+				clients[fd] = client
+			}
 			cmds, err := readCommands(comm, &buf)
 			buffers[fd] = buf
 
 			for _, cmd := range cmds {
 				log.Println("command", cmd)
-				if werr := respond(cmd, comm); werr != nil {
+				if werr := respond(client, cmd, comm); werr != nil {
 					log.Println("err write:", werr)
 				}
 			}
 			if err != nil {
 				delete(buffers, fd)
+				delete(clients, fd)
 				syscall.Close(fd)
 				core.ClientDisconnected()
 				log.Println("client disconnected", "fd", fd, "concurrent clients", core.ConnectedClients())
@@ -156,11 +164,12 @@ func RunAsyncTCPServer() {
 	}
 }
 
-func closeAllClients(buffers map[int][]byte) {
+func closeAllClients(buffers map[int][]byte, clients map[int]*core.Client) {
 	for fd := range buffers {
 		syscall.Close(fd)
 		core.ClientDisconnected()
 		delete(buffers, fd)
+		delete(clients, fd)
 	}
 }
 
