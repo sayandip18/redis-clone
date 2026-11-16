@@ -13,6 +13,9 @@ var store map[string]*Obj
 // ErrWrongType is returned when a command is used against a key of the wrong type.
 var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
 
+// ErrOOM is returned when the key limit is reached and no key can be evicted.
+var ErrOOM = errors.New("(error) OOM command not allowed when used memory > 'maxmemory'")
+
 type ObjType uint8
 type ObjEncoding uint8
 
@@ -35,6 +38,24 @@ type Obj struct {
 	Encoding  ObjEncoding
 	Value     interface{}
 	ExpiresAt int64
+	LRU       uint32 // last-access clock in seconds (approximate LRU)
+}
+
+// getLRUClock returns the current coarse LRU clock (unix seconds).
+func getLRUClock() uint32 {
+	return uint32(time.Now().Unix())
+}
+
+// IdleTime returns how many seconds the object has been idle.
+func IdleTime(obj *Obj) int64 {
+	if obj == nil {
+		return 0
+	}
+	idle := int64(getLRUClock()) - int64(obj.LRU)
+	if idle < 0 {
+		return 0
+	}
+	return idle
 }
 
 func init() {
@@ -65,6 +86,7 @@ func NewStringObj(value string, durationMs int64) *Obj {
 		Encoding:  enc,
 		Value:     v,
 		ExpiresAt: expiresAt,
+		LRU:       getLRUClock(),
 	}
 }
 
@@ -147,14 +169,34 @@ func stringObjToRaw(obj *Obj) error {
 	return nil
 }
 
-func Put(k string, obj *Obj) {
+// Put stores obj under k. On overwrite or insert it refreshes the LRU clock.
+// If the store is at KeysLimit and a new key cannot be evicted into, returns ErrOOM.
+func Put(k string, obj *Obj) error {
+	obj.LRU = getLRUClock()
 	if _, exists := store[k]; !exists && len(store) >= config.KeysLimit {
-		evict()
+		if !evict() {
+			return ErrOOM
+		}
 	}
 	store[k] = obj
+	return nil
 }
 
+// Get returns the object for k, deleting it if expired. Successful lookups touch LRU.
 func Get(k string) *Obj {
+	v := store[k]
+	if v != nil {
+		if v.ExpiresAt != -1 && v.ExpiresAt <= time.Now().UnixMilli() {
+			delete(store, k)
+			return nil
+		}
+		v.LRU = getLRUClock()
+	}
+	return v
+}
+
+// getNoTouch looks up k without updating the LRU clock (for OBJECT IDLETIME / ENCODING).
+func getNoTouch(k string) *Obj {
 	v := store[k]
 	if v != nil {
 		if v.ExpiresAt != -1 && v.ExpiresAt <= time.Now().UnixMilli() {

@@ -87,7 +87,9 @@ func evalSET(args []string, c io.Writer) error {
 		}
 	}
 
-	Put(key, NewStringObj(value, exDurationMs))
+	if err := Put(key, NewStringObj(value, exDurationMs)); err != nil {
+		return err
+	}
 	c.Write([]byte("+OK\r\n"))
 	return nil
 }
@@ -201,12 +203,23 @@ func evalOBJECT(args []string, c io.Writer) error {
 		if len(args) != 2 {
 			return errors.New("(error) ERR wrong number of arguments for 'object|encoding' command")
 		}
-		obj := Get(args[1])
+		obj := getNoTouch(args[1])
 		if obj == nil {
 			_, err := c.Write(RESP_NIL)
 			return err
 		}
 		_, err := c.Write(resp.Encode(EncodingName(obj.Encoding), false))
+		return err
+	case "IDLETIME", "idletime":
+		if len(args) != 2 {
+			return errors.New("(error) ERR wrong number of arguments for 'object|idletime' command")
+		}
+		obj := getNoTouch(args[1])
+		if obj == nil {
+			_, err := c.Write(RESP_NIL)
+			return err
+		}
+		_, err := c.Write(resp.Encode(IdleTime(obj), false))
 		return err
 	default:
 		return fmt.Errorf("(error) ERR unknown subcommand or wrong number of arguments for '%s'. Try OBJECT HELP.", sub)
@@ -228,8 +241,11 @@ func evalINCR(args []string, c io.Writer) error {
 			Encoding:  EncodingInt,
 			Value:     int64(0),
 			ExpiresAt: -1,
+			LRU:       getLRUClock(),
 		}
-		Put(key, obj)
+		if err := Put(key, obj); err != nil {
+			return err
+		}
 	} else {
 		if obj.Type != ObjString {
 			return ErrWrongType
@@ -252,7 +268,6 @@ func evalINCR(args []string, c io.Writer) error {
 	_, err := c.Write(resp.Encode(i, false))
 	return err
 }
-
 func buildINFO() string {
 	var b strings.Builder
 	b.WriteString("# Server\r\n")
