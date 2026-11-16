@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/sayandip18/redis-clone/config"
+	"github.com/sayandip18/redis-clone/internal/core"
 	"github.com/sayandip18/redis-clone/server"
 )
 
@@ -17,6 +18,7 @@ func setupFlags() {
 func main() {
 	setupFlags()
 	log.Println("Rolling the dice...")
+	core.MarkStart()
 	// server.RunSyncTCPServer()
 	server.RunAsyncTCPServer()
 }

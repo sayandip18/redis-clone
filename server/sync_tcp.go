@@ -70,7 +70,6 @@ func respond(cmd *core.RedisCmd, rw io.ReadWriter) error {
 func RunSyncTCPServer() {
 	log.Println("starting a synchronous TCP server on", config.Host, config.Port)
 
-	conClients := 0
 	lsnr, err := net.Listen("tcp", config.Host+":"+strconv.Itoa(config.Port))
 	if err != nil {
 		panic(err)
@@ -81,8 +80,8 @@ func RunSyncTCPServer() {
 		if err != nil {
 			panic(err)
 		}
-		conClients++
-		log.Println("client connected with address:", c.RemoteAddr(), "concurrent clients", conClients)
+		core.ClientConnected()
+		log.Println("client connected with address:", c.RemoteAddr(), "concurrent clients", core.ConnectedClients())
 
 		var buf []byte
 		for {
@@ -95,8 +94,8 @@ func RunSyncTCPServer() {
 			}
 			if err != nil {
 				c.Close()
-				conClients--
-				log.Println("client disconnected", c.RemoteAddr(), "concurrent clients", conClients)
+				core.ClientDisconnected()
+				log.Println("client disconnected", c.RemoteAddr(), "concurrent clients", core.ConnectedClients())
 				if err != io.EOF {
 					log.Println("err", err)
 				}

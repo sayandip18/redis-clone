@@ -6,8 +6,10 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/sayandip18/redis-clone/config"
 	"github.com/sayandip18/redis-clone/internal/resp"
 )
 
@@ -33,6 +35,8 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 		return evalOBJECT(cmd.Args, w)
 	case "INCR":
 		return evalINCR(cmd.Args, w)
+	case "INFO":
+		return evalINFO(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -246,5 +250,28 @@ func evalINCR(args []string, c io.Writer) error {
 	obj.Value = i
 
 	_, err := c.Write(resp.Encode(i, false))
+	return err
+}
+
+func buildINFO() string {
+	var b strings.Builder
+	b.WriteString("# Server\r\n")
+	b.WriteString(fmt.Sprintf("tcp_port:%d\r\n", config.Port))
+	b.WriteString(fmt.Sprintf("uptime_in_seconds:%d\r\n", UptimeSeconds()))
+	b.WriteString("\r\n")
+	b.WriteString("# Clients\r\n")
+	b.WriteString(fmt.Sprintf("connected_clients:%d\r\n", ConnectedClients()))
+	b.WriteString("\r\n")
+	b.WriteString("# Keyspace\r\n")
+	b.WriteString(fmt.Sprintf("db0:keys=%d,expires=%d,avg_ttl=0\r\n", KeyCount(), ExpiresCount()))
+	return b.String()
+}
+
+func evalINFO(args []string, c io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'info' command")
+	}
+
+	_, err := c.Write(resp.Encode(buildINFO(), false))
 	return err
 }

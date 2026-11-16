@@ -172,3 +172,19 @@ func Del(k string) bool {
 	}
 	return false
 }
+
+// KeyCount returns the number of keys currently in the store.
+func KeyCount() int {
+	return len(store)
+}
+
+// ExpiresCount returns how many keys have an expiry set.
+func ExpiresCount() int {
+	n := 0
+	for _, obj := range store {
+		if obj != nil && obj.ExpiresAt != -1 {
+			n++
+		}
+	}
+	return n
+}

@@ -16,7 +16,6 @@ func RunAsyncTCPServer() {
 	log.Println("starting an asynchronous TCP server on", config.Host, config.Port)
 
 	maxClients := 20000
-	conClients := 0
 	var cronFrequency time.Duration = 1 * time.Second
 	var lastCronExecTime time.Time = time.Now()
 	buffers := make(map[int][]byte)
@@ -107,8 +106,8 @@ func RunAsyncTCPServer() {
 					continue
 				}
 
-				conClients++
-				log.Println("client connected with address:", sockaddrString(sa), "concurrent clients", conClients)
+				core.ClientConnected()
+				log.Println("client connected with address:", sockaddrString(sa), "concurrent clients", core.ConnectedClients())
 				continue
 			}
 
@@ -126,8 +125,8 @@ func RunAsyncTCPServer() {
 			if err != nil {
 				delete(buffers, fd)
 				syscall.Close(fd)
-				conClients--
-				log.Println("client disconnected", "fd", fd, "concurrent clients", conClients)
+				core.ClientDisconnected()
+				log.Println("client disconnected", "fd", fd, "concurrent clients", core.ConnectedClients())
 				log.Println("err", err)
 				continue
 			}
