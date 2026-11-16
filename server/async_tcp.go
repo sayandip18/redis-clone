@@ -19,6 +19,7 @@ func RunAsyncTCPServer() {
 	var cronFrequency time.Duration = 1 * time.Second
 	var lastCronExecTime time.Time = time.Now()
 	buffers := make(map[int][]byte)
+	accepting := true
 
 	events := make([]syscall.EpollEvent, maxClients)
 
@@ -67,6 +68,23 @@ func RunAsyncTCPServer() {
 	}
 
 	for {
+		if core.ShutdownRequested() {
+			if accepting {
+				if err := syscall.EpollCtl(epollFD, syscall.EPOLL_CTL_DEL, serverFD, nil); err != nil {
+					log.Println("err epoll del server:", err)
+				}
+				accepting = false
+				log.Println("shutdown requested - stopped accepting new connections")
+			}
+
+			closeAllClients(buffers)
+			if err := core.DumpAllAOF(); err != nil {
+				log.Println("err dumping AOF on shutdown:", err)
+			}
+			log.Println("graceful shutdown complete")
+			break
+		}
+
 		if time.Now().After(lastCronExecTime.Add(cronFrequency)) {
 			core.DeleteExpiredKeys()
 			lastCronExecTime = time.Now()
@@ -84,6 +102,9 @@ func RunAsyncTCPServer() {
 			fd := int(events[i].Fd)
 
 			if fd == serverFD {
+				if !accepting || core.ShutdownRequested() {
+					continue
+				}
 				clientFD, sa, err := syscall.Accept(serverFD)
 				if err != nil {
 					log.Println("err accept:", err)
@@ -106,6 +127,7 @@ func RunAsyncTCPServer() {
 					continue
 				}
 
+				buffers[clientFD] = nil
 				core.ClientConnected()
 				log.Println("client connected with address:", sockaddrString(sa), "concurrent clients", core.ConnectedClients())
 				continue
@@ -131,6 +153,14 @@ func RunAsyncTCPServer() {
 				continue
 			}
 		}
+	}
+}
+
+func closeAllClients(buffers map[int][]byte) {
+	for fd := range buffers {
+		syscall.Close(fd)
+		core.ClientDisconnected()
+		delete(buffers, fd)
 	}
 }
 

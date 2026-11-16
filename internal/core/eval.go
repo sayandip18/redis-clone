@@ -37,6 +37,8 @@ func EvalAndRespond(cmd *RedisCmd, w io.ReadWriter) error {
 		return evalINCR(cmd.Args, w)
 	case "INFO":
 		return evalINFO(cmd.Args, w)
+	case "SHUTDOWN":
+		return evalSHUTDOWN(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -190,6 +192,17 @@ func evalBGREWRITEAOF(args []string, c io.ReadWriter) error {
 	}
 	_, err := c.Write([]byte("+OK\r\n"))
 	return err
+}
+
+func evalSHUTDOWN(args []string, c io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("(error) ERR wrong number of arguments for 'shutdown' command")
+	}
+	if _, err := c.Write([]byte("+OK\r\n")); err != nil {
+		return err
+	}
+	RequestShutdown()
+	return nil
 }
 
 func evalOBJECT(args []string, c io.Writer) error {
