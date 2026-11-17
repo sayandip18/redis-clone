@@ -31,7 +31,7 @@ const (
 )
 
 const (
-	EncodingRaw ObjEncoding = iota // plain Go string
+	EncodingRaw ObjEncoding = iota // SDS-backed string
 	EncodingInt                    // integer stored as int64
 	EncodingEmbstr                 // short string (tag-only in Go)
 	EncodingZiplist                // compact list encoding
@@ -92,7 +92,7 @@ func deleteKey(k string) bool {
 	return true
 }
 
-// chooseStringEncoding picks int, embstr, or raw for a string value.
+// chooseStringEncoding picks int, embstr, or raw (SDS) for a string value.
 func chooseStringEncoding(value string) (ObjEncoding, interface{}) {
 	if n, err := strconv.ParseInt(value, 10, 64); err == nil {
 		return EncodingInt, n
@@ -100,7 +100,7 @@ func chooseStringEncoding(value string) (ObjEncoding, interface{}) {
 	if len(value) <= EmbstrMaxLen {
 		return EncodingEmbstr, value
 	}
-	return EncodingRaw, value
+	return EncodingRaw, NewSDS(value)
 }
 
 // NewStringObj creates a string object, choosing int / embstr / raw encoding.
@@ -127,12 +127,18 @@ func GetStringValue(obj *Obj) (string, error) {
 	}
 
 	switch obj.Encoding {
-	case EncodingRaw, EncodingEmbstr:
+	case EncodingEmbstr:
 		s, ok := obj.Value.(string)
 		if !ok {
 			return "", ErrWrongType
 		}
 		return s, nil
+	case EncodingRaw:
+		sds, ok := obj.Value.(*SDS)
+		if !ok || sds == nil {
+			return "", ErrWrongType
+		}
+		return sds.String(), nil
 	case EncodingInt:
 		n, ok := obj.Value.(int64)
 		if !ok {
@@ -175,7 +181,7 @@ func getInt64Value(obj *Obj) (int64, error) {
 			return 0, errors.New("(error) ERR value is not an integer or out of range")
 		}
 		return n, nil
-	case EncodingRaw, EncodingEmbstr:
+	case EncodingEmbstr:
 		s, ok := obj.Value.(string)
 		if !ok {
 			return 0, errors.New("(error) ERR value is not an integer or out of range")
@@ -185,25 +191,44 @@ func getInt64Value(obj *Obj) (int64, error) {
 			return 0, errors.New("(error) ERR value is not an integer or out of range")
 		}
 		return n, nil
+	case EncodingRaw:
+		sds, ok := obj.Value.(*SDS)
+		if !ok || sds == nil {
+			return 0, errors.New("(error) ERR value is not an integer or out of range")
+		}
+		n, err := strconv.ParseInt(sds.String(), 10, 64)
+		if err != nil {
+			return 0, errors.New("(error) ERR value is not an integer or out of range")
+		}
+		return n, nil
 	default:
 		return 0, errors.New("(error) ERR value is not an integer or out of range")
 	}
 }
 
-// stringObjToRaw promotes int/embstr string objects to EncodingRaw (for future mutating cmds).
+// stringObjToRaw promotes int/embstr string objects to EncodingRaw (*SDS).
+// Idempotent when already EncodingRaw with a valid *SDS.
 func stringObjToRaw(obj *Obj) error {
 	if obj.Type != ObjString {
 		return ErrWrongType
 	}
 	if obj.Encoding == EncodingRaw {
-		return nil
+		if _, ok := obj.Value.(*SDS); ok {
+			return nil
+		}
+		// Recover legacy/plain string payloads into SDS.
+		if s, ok := obj.Value.(string); ok {
+			obj.Value = NewSDS(s)
+			return nil
+		}
+		return ErrWrongType
 	}
 	s, err := GetStringValue(obj)
 	if err != nil {
 		return err
 	}
 	obj.Encoding = EncodingRaw
-	obj.Value = s
+	obj.Value = NewSDS(s)
 	return nil
 }
 

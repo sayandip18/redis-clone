@@ -59,6 +59,14 @@ func execCommand(client *Client, cmd *RedisCmd, w io.Writer, allowBlock bool) er
 		return evalOBJECT(cmd.Args, w)
 	case "INCR":
 		return evalINCR(cmd.Args, w)
+	case "APPEND":
+		return evalAPPEND(cmd.Args, w)
+	case "STRLEN":
+		return evalSTRLEN(cmd.Args, w)
+	case "GETRANGE":
+		return evalGETRANGE(cmd.Args, w)
+	case "SETRANGE":
+		return evalSETRANGE(cmd.Args, w)
 	case "INFO":
 		return evalINFO(cmd.Args, w)
 	case "SHUTDOWN":
@@ -125,7 +133,7 @@ func execCommand(client *Client, cmd *RedisCmd, w io.Writer, allowBlock bool) er
 func isKnownCommand(name string) bool {
 	switch name {
 	case "PING", "GET", "SET", "TTL", "DEL", "EXPIRE", "BGREWRITEAOF",
-		"OBJECT", "INCR", "INFO", "SHUTDOWN",
+		"OBJECT", "INCR", "APPEND", "STRLEN", "GETRANGE", "SETRANGE", "INFO", "SHUTDOWN",
 		"MULTI", "EXEC", "DISCARD", "WATCH",
 		"LPUSH", "RPUSH", "LPOP", "RPOP", "LLEN", "LRANGE", "LINDEX", "LSET",
 		"LINSERT", "LTRIM", "LREM", "BLPOP", "BRPOP",

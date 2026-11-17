@@ -26,14 +26,14 @@ go run . -host 127.0.0.1 -port 7379
 | Category | Commands |
 |---|---|
 | Connection | `PING`, `INFO`, `SHUTDOWN` |
-| Strings | `SET`, `GET`, `INCR` |
+| Strings | `SET`, `GET`, `INCR`, `APPEND`, `STRLEN`, `GETRANGE`, `SETRANGE` |
 | Keys | `DEL`, `EXPIRE`, `TTL`, `OBJECT` |
 | Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, `LRANGE`, `LINDEX`, `LSET`, `LINSERT`, `LTRIM`, `LREM`, `BLPOP`, `BRPOP` |
 | Sets | `SADD`, `SREM`, `SISMEMBER`, `SCARD`, `SMEMBERS`, `SRANDMEMBER`, `SPOP`, `SINTER`, `SUNION`, `SDIFF`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE` |
 | Transactions | `MULTI`, `EXEC`, `DISCARD`, `WATCH` |
 | Persistence | `BGREWRITEAOF` |
 
-List encodings: `ziplist` → `quicklist`. Set encodings: `intset` → `hashtable`.
+String encodings: `int` / `embstr` / `raw` (SDS). List encodings: `ziplist` → `quicklist`. Set encodings: `intset` → `hashtable`.
 
 ## Development
 

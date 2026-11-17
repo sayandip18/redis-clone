@@ -79,7 +79,7 @@ func TestDumpAllAOF_SETWithPEXPIREAT(t *testing.T) {
 	path := withTempAOF(t)
 
 	expiresAt := time.Now().UnixMilli() + 60_000
-	Put("foo", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: "bar", ExpiresAt: expiresAt})
+	Put("foo", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: NewSDS("bar"), ExpiresAt: expiresAt})
 
 	if err := DumpAllAOF(); err != nil {
 		t.Fatalf("DumpAllAOF() error: %v", err)
@@ -126,7 +126,7 @@ func TestDumpAllAOF_SkipsExpiredKeys(t *testing.T) {
 	path := withTempAOF(t)
 
 	Put("alive", NewStringObj("ok", -1))
-	Put("dead", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: "gone", ExpiresAt: time.Now().UnixMilli() - 1000})
+	Put("dead", &Obj{Type: ObjString, Encoding: EncodingRaw, Value: NewSDS("gone"), ExpiresAt: time.Now().UnixMilli() - 1000})
 
 	if err := DumpAllAOF(); err != nil {
 		t.Fatalf("DumpAllAOF() error: %v", err)

@@ -38,8 +38,12 @@ func TestNewStringObj_EncodingRaw(t *testing.T) {
 	if obj.Encoding != EncodingRaw {
 		t.Fatalf("Encoding = %v, want EncodingRaw", obj.Encoding)
 	}
-	if obj.Value != value {
-		t.Fatalf("Value length = %d, want %d", len(obj.Value.(string)), len(value))
+	sds, ok := obj.Value.(*SDS)
+	if !ok {
+		t.Fatalf("Value type = %T, want *SDS", obj.Value)
+	}
+	if sds.String() != value {
+		t.Fatalf("Value length = %d, want %d", sds.Len(), len(value))
 	}
 }
 
@@ -99,8 +103,12 @@ func TestStringObjToRaw(t *testing.T) {
 	if obj.Encoding != EncodingRaw {
 		t.Fatalf("Encoding = %v, want EncodingRaw", obj.Encoding)
 	}
-	if obj.Value != "99" {
-		t.Fatalf("Value = %v, want %q", obj.Value, "99")
+	sds, ok := obj.Value.(*SDS)
+	if !ok || sds.String() != "99" {
+		t.Fatalf("Value = %v, want SDS %q", obj.Value, "99")
+	}
+	if err := stringObjToRaw(obj); err != nil {
+		t.Fatalf("stringObjToRaw() idempotent error: %v", err)
 	}
 }
 
