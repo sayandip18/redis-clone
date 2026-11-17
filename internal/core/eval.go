@@ -36,10 +36,10 @@ func EvalAndRespond(client *Client, cmd *RedisCmd, w io.Writer) error {
 		return enqueueCommand(client, cmd, w)
 	}
 
-	return execCommand(cmd, w)
+	return execCommand(client, cmd, w, true)
 }
 
-func execCommand(cmd *RedisCmd, w io.Writer) error {
+func execCommand(client *Client, cmd *RedisCmd, w io.Writer, allowBlock bool) error {
 	switch cmd.Cmd {
 	case "PING":
 		return evalPING(cmd.Args, w)
@@ -63,6 +63,60 @@ func execCommand(cmd *RedisCmd, w io.Writer) error {
 		return evalINFO(cmd.Args, w)
 	case "SHUTDOWN":
 		return evalSHUTDOWN(cmd.Args, w)
+	case "LPUSH":
+		return evalLPUSH(cmd.Args, w)
+	case "RPUSH":
+		return evalRPUSH(cmd.Args, w)
+	case "LPOP":
+		return evalLPOP(cmd.Args, w)
+	case "RPOP":
+		return evalRPOP(cmd.Args, w)
+	case "LLEN":
+		return evalLLEN(cmd.Args, w)
+	case "LRANGE":
+		return evalLRANGE(cmd.Args, w)
+	case "LINDEX":
+		return evalLINDEX(cmd.Args, w)
+	case "LSET":
+		return evalLSET(cmd.Args, w)
+	case "LINSERT":
+		return evalLINSERT(cmd.Args, w)
+	case "LTRIM":
+		return evalLTRIM(cmd.Args, w)
+	case "LREM":
+		return evalLREM(cmd.Args, w)
+	case "BLPOP":
+		_, err := evalBlockingPop(client, cmd.Args, w, true, allowBlock)
+		return err
+	case "BRPOP":
+		_, err := evalBlockingPop(client, cmd.Args, w, false, allowBlock)
+		return err
+	case "SADD":
+		return evalSADD(cmd.Args, w)
+	case "SREM":
+		return evalSREM(cmd.Args, w)
+	case "SISMEMBER":
+		return evalSISMEMBER(cmd.Args, w)
+	case "SCARD":
+		return evalSCARD(cmd.Args, w)
+	case "SMEMBERS":
+		return evalSMEMBERS(cmd.Args, w)
+	case "SRANDMEMBER":
+		return evalSRANDMEMBER(cmd.Args, w)
+	case "SPOP":
+		return evalSPOP(cmd.Args, w)
+	case "SINTER":
+		return evalSINTER(cmd.Args, w)
+	case "SUNION":
+		return evalSUNION(cmd.Args, w)
+	case "SDIFF":
+		return evalSDIFF(cmd.Args, w)
+	case "SINTERSTORE":
+		return evalSINTERSTORE(cmd.Args, w)
+	case "SUNIONSTORE":
+		return evalSUNIONSTORE(cmd.Args, w)
+	case "SDIFFSTORE":
+		return evalSDIFFSTORE(cmd.Args, w)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Cmd)
 	}
@@ -72,7 +126,11 @@ func isKnownCommand(name string) bool {
 	switch name {
 	case "PING", "GET", "SET", "TTL", "DEL", "EXPIRE", "BGREWRITEAOF",
 		"OBJECT", "INCR", "INFO", "SHUTDOWN",
-		"MULTI", "EXEC", "DISCARD", "WATCH":
+		"MULTI", "EXEC", "DISCARD", "WATCH",
+		"LPUSH", "RPUSH", "LPOP", "RPOP", "LLEN", "LRANGE", "LINDEX", "LSET",
+		"LINSERT", "LTRIM", "LREM", "BLPOP", "BRPOP",
+		"SADD", "SREM", "SISMEMBER", "SCARD", "SMEMBERS", "SRANDMEMBER", "SPOP",
+		"SINTER", "SUNION", "SDIFF", "SINTERSTORE", "SUNIONSTORE", "SDIFFSTORE":
 		return true
 	default:
 		return false
@@ -134,7 +192,7 @@ func evalEXEC(client *Client, args []string, w io.Writer) error {
 	out.WriteString(fmt.Sprintf("*%d\r\n", len(queue)))
 	for _, queued := range queue {
 		var buf bytes.Buffer
-		if err := execCommand(queued, &buf); err != nil {
+		if err := execCommand(client, queued, &buf, false); err != nil {
 			buf.Reset()
 			buf.WriteString(fmt.Sprintf("-%s\r\n", err.Error()))
 		}

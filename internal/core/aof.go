@@ -11,6 +11,8 @@ import (
 	"github.com/sayandip18/redis-clone/config"
 )
 
+const aofChunkSize = 64
+
 func DumpAllAOF() error {
 	var sb strings.Builder
 	now := time.Now().UnixMilli()
@@ -21,13 +23,46 @@ func DumpAllAOF() error {
 			continue
 		}
 
-		value, err := GetStringValue(obj)
-		if err != nil {
-			// Only string objects are supported in AOF for now.
+		switch obj.Type {
+		case ObjString:
+			value, err := GetStringValue(obj)
+			if err != nil {
+				continue
+			}
+			sb.WriteString(encodeAOFCommand("SET", key, value))
+		case ObjList:
+			entries, err := listEntries(obj)
+			if err != nil || len(entries) == 0 {
+				continue
+			}
+			for i := 0; i < len(entries); i += aofChunkSize {
+				end := i + aofChunkSize
+				if end > len(entries) {
+					end = len(entries)
+				}
+				args := make([]string, 0, 2+end-i)
+				args = append(args, "RPUSH", key)
+				args = append(args, entries[i:end]...)
+				sb.WriteString(encodeAOFCommand(args...))
+			}
+		case ObjSet:
+			members, err := setMembersForAOF(obj)
+			if err != nil || len(members) == 0 {
+				continue
+			}
+			for i := 0; i < len(members); i += aofChunkSize {
+				end := i + aofChunkSize
+				if end > len(members) {
+					end = len(members)
+				}
+				args := make([]string, 0, 2+end-i)
+				args = append(args, "SADD", key)
+				args = append(args, members[i:end]...)
+				sb.WriteString(encodeAOFCommand(args...))
+			}
+		default:
 			continue
 		}
-
-		sb.WriteString(encodeAOFCommand("SET", key, value))
 
 		if obj.ExpiresAt != -1 {
 			sb.WriteString(encodeAOFCommand("PEXPIREAT", key, strconv.FormatInt(obj.ExpiresAt, 10)))

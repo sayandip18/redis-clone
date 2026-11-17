@@ -25,10 +25,15 @@ go run . -host 127.0.0.1 -port 7379
 
 | Category | Commands |
 |---|---|
-| Connection | `PING` |
-| Strings | _coming soon_ |
+| Connection | `PING`, `INFO`, `SHUTDOWN` |
+| Strings | `SET`, `GET`, `INCR` |
+| Keys | `DEL`, `EXPIRE`, `TTL`, `OBJECT` |
+| Lists | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, `LRANGE`, `LINDEX`, `LSET`, `LINSERT`, `LTRIM`, `LREM`, `BLPOP`, `BRPOP` |
+| Sets | `SADD`, `SREM`, `SISMEMBER`, `SCARD`, `SMEMBERS`, `SRANDMEMBER`, `SPOP`, `SINTER`, `SUNION`, `SDIFF`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE` |
+| Transactions | `MULTI`, `EXEC`, `DISCARD`, `WATCH` |
+| Persistence | `BGREWRITEAOF` |
 
-This table is updated as features are added.
+List encodings: `ziplist` → `quicklist`. Set encodings: `intset` → `hashtable`.
 
 ## Development
 
@@ -42,21 +47,24 @@ go vet ./...
 
 ```
 main.go              # entry point
-config/              # host/port defaults
-server/              # synchronous TCP server
+config/              # host/port and encoding thresholds
+server/              # TCP servers (sync + async/epoll)
 internal/resp/       # RESP decode/encode
-internal/core/       # command types and handlers
+internal/core/       # store, encodings, command handlers
 ```
 
 ## Roadmap
 
 - [x] TCP server + RESP protocol
 - [x] `PING`
-- [ ] Strings (`SET`, `GET`, `DEL`, `INCR`, ...)
-- [ ] Key expiration
-- [ ] Lists, hashes, sets, sorted sets
-- [ ] Persistence (AOF, RDB)
-- [ ] Pub/sub, transactions, eviction
+- [x] Strings (`SET`, `GET`, `DEL`, `INCR`, ...)
+- [x] Key expiration
+- [x] Lists (ziplist / quicklist) and sets (intset / hashtable)
+- [ ] Hashes, sorted sets
+- [x] Persistence (AOF rewrite)
+- [ ] RDB
+- [x] Transactions, eviction
+- [ ] Pub/sub
 - [ ] Benchmarks and profiling
 
 ## License

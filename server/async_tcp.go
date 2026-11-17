@@ -88,6 +88,7 @@ func RunAsyncTCPServer() {
 
 		if time.Now().After(lastCronExecTime.Add(cronFrequency)) {
 			core.DeleteExpiredKeys()
+			core.ProcessBlockTimeouts()
 			lastCronExecTime = time.Now()
 		}
 		nevents, err := syscall.EpollWait(epollFD, events, 100)
@@ -152,6 +153,9 @@ func RunAsyncTCPServer() {
 				}
 			}
 			if err != nil {
+				if client != nil {
+					core.ClientBlockCleanup(client)
+				}
 				delete(buffers, fd)
 				delete(clients, fd)
 				syscall.Close(fd)
@@ -165,11 +169,16 @@ func RunAsyncTCPServer() {
 }
 
 func closeAllClients(buffers map[int][]byte, clients map[int]*core.Client) {
-	for fd := range buffers {
+	for fd, client := range clients {
+		core.ClientBlockCleanup(client)
 		syscall.Close(fd)
 		core.ClientDisconnected()
 		delete(buffers, fd)
 		delete(clients, fd)
+	}
+	for fd := range buffers {
+		syscall.Close(fd)
+		delete(buffers, fd)
 	}
 }
 

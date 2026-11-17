@@ -25,13 +25,19 @@ type ObjEncoding uint8
 
 const (
 	ObjString ObjType = iota
-	// Future: ObjList, ObjHash, ObjSet, ObjZSet
+	ObjList
+	ObjSet
+	// Future: ObjHash, ObjZSet
 )
 
 const (
 	EncodingRaw ObjEncoding = iota // plain Go string
 	EncodingInt                    // integer stored as int64
 	EncodingEmbstr                 // short string (tag-only in Go)
+	EncodingZiplist                // compact list encoding
+	EncodingQuicklist              // list of ziplist nodes
+	EncodingIntset                 // sorted integer set
+	EncodingHT                     // hashtable set
 )
 
 // EmbstrMaxLen is Redis's default max length for embstr encoding.
@@ -147,6 +153,14 @@ func EncodingName(enc ObjEncoding) string {
 		return "embstr"
 	case EncodingRaw:
 		return "raw"
+	case EncodingZiplist:
+		return "ziplist"
+	case EncodingQuicklist:
+		return "quicklist"
+	case EncodingIntset:
+		return "intset"
+	case EncodingHT:
+		return "hashtable"
 	default:
 		return "unknown"
 	}

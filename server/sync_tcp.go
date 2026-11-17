@@ -94,6 +94,7 @@ func RunSyncTCPServer() {
 				}
 			}
 			if err != nil {
+				core.ClientBlockCleanup(client)
 				c.Close()
 				core.ClientDisconnected()
 				log.Println("client disconnected", c.RemoteAddr(), "concurrent clients", core.ConnectedClients())
